@@ -597,14 +597,15 @@ class AWSBW():
             self.screenRefresh()
 
 
-def main(stdscr, args):
+def start(stdscr, args):
     awsbw = AWSBW(
         stdscr,
         args.queue,
     )
     awsbw.actionLoop()
 
-if __name__ == '__main__':
+
+def main():
     parser = argparse.ArgumentParser(description="AWS Batch Watcher")
     parser.add_argument(
         '-Q', '--queue',
@@ -613,4 +614,7 @@ if __name__ == '__main__':
         nargs='+'
     )
     args = parser.parse_args()
-    wrapper(main, args)
+    wrapper(start, args)
+
+if __name__ == '__main__':
+    main()
