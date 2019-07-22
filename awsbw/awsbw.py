@@ -22,6 +22,7 @@ class AWSBW():
         self.__stdscr__.nodelay(True)
         (self.__termHeight__, self.__termWidth__) = stdscr.getmaxyx()
         self.__stdscr__.clear()
+        self.__stdscr__.border()
         # add a window for the job listing
         self.__jobsWin__ = curses.newwin(
             self.__termHeight__ - 2,
@@ -55,7 +56,7 @@ class AWSBW():
                 curH - 2,
                 curW - 2,
             )
-
+            self.__stdscr__.border()
         # Header: Use it to show the queues including which is current.
         x = 1
         for q in self.__jobQueues__:
@@ -82,6 +83,18 @@ class AWSBW():
                 datetime.fromtimestamp(
                     self.__lastJobCheck__).strftime('%Y-%m-%d %H:%M:%S')
             )
+
+        # Footer
+        if curW > 71:
+            self.__stdscr__.addstr(
+                curH - 1,
+                max(
+                    1,
+                    int(curW / 2) - 34
+                ),
+                " < > to change queues. D for job details. L for job logs. Q to quit. "
+            )
+
 
         self.showJobs()
         self.__stdscr__.refresh()
@@ -298,7 +311,7 @@ class AWSBW():
                 job['jobId'],
                 job['queue']
             ),
-            winW - 3,
+            winW - 2,
         )
         # Timing
         timingStr = "Created: {}.".format(
@@ -318,7 +331,7 @@ class AWSBW():
             2,
             1,
             timingStr,
-            winW - 3,
+            winW - 2,
         )
         jobDetails = self.jobDetails(job['jobId'])
         if jobDetails is not None:
@@ -328,17 +341,24 @@ class AWSBW():
                 "Job Description: {}".format(
                     jobDetails['jobDefinition'].split('/')[-1]
                 ),
-                winW - 3
+                winW - 2
             )
             dp_win.addnstr(
                 4,
                 1,
-                "Image: {}\t\tvcpu: {}\t\tmem: {:,} MB.".format(
+                "Image: {}".format(
                     jobDetails['container']['image'],
+                ),
+                winW - 2
+            )
+            dp_win.addnstr(
+                5,
+                1,
+                "\tvcpu: {}\t\tmem: {:,} MB.".format(
                     jobDetails['container'].get('vcpus'),
                     jobDetails['container'].get('memory')
                 ),
-                winW - 1
+                winW - 2
             )
             cmd_start = 0
             commands = jobDetails['container']['command']
@@ -347,7 +367,7 @@ class AWSBW():
             commands = []
         cmd_i = 0
         for cmd in commands[cmd_start:]:
-            if cmd_i + 7 >= winH:
+            if cmd_i + 8 >= winH:
                     break
             cmd_chunks = [
                 cmd[i:i + int(winW - 2)]
@@ -358,10 +378,10 @@ class AWSBW():
                 )
             ]
             for cmd_chunk in cmd_chunks:
-                if cmd_i + 7 >= winH:
+                if cmd_i + 8 >= winH:
                     break
                 dp_win.addstr(
-                    cmd_i + 6,
+                    cmd_i + 7,
                     1,
                     cmd_chunk.ljust(winW - 2)
                 )
@@ -381,7 +401,7 @@ class AWSBW():
                     cmd_start += 1
                     cmd_i = 0
                     for cmd in commands[cmd_start:]:
-                        if cmd_i + 7 >= winH:
+                        if cmd_i + 8 >= winH:
                                 break
                         cmd_chunks = [
                             cmd[i:i + int(winW - 2)]
@@ -392,10 +412,10 @@ class AWSBW():
                             )
                         ]
                         for cmd_chunk in cmd_chunks:
-                            if cmd_i + 7 >= winH:
+                            if cmd_i + 8 >= winH:
                                 break
                             dp_win.addstr(
-                                cmd_i + 6,
+                                cmd_i + 7,
                                 1,
                                 cmd_chunk.ljust(winW - 2)
                             )
@@ -406,7 +426,7 @@ class AWSBW():
                     cmd_start -= 1
                     cmd_i = 0
                     for cmd in commands[cmd_start:]:
-                        if cmd_i + 7 >= winH:
+                        if cmd_i + 8 >= winH:
                                 break
                         cmd_chunks = [
                             cmd[i:i + int(winW - 2)]
@@ -417,10 +437,10 @@ class AWSBW():
                             )
                         ]
                         for cmd_chunk in cmd_chunks:
-                            if cmd_i + 7 >= winH:
+                            if cmd_i + 8 >= winH:
                                 break
                             dp_win.addstr(
-                                cmd_i + 6,
+                                cmd_i + 7,
                                 1,
                                 cmd_chunk.ljust(winW - 2)
                             )
@@ -442,7 +462,7 @@ class AWSBW():
             self.__stdscr__.border()
             return
 
-        lp_win.border()        
+        lp_win.border()  
         lp_win.addstr(
             winH - 1,
             int(winW / 2) - 3,
@@ -479,7 +499,7 @@ class AWSBW():
                 key=lambda e: -e['timestamp']
             )
         except:
-            return
+            events = []
 
         event_first = 0
         e_i = 0
