@@ -92,7 +92,7 @@ class AWSBW():
                     1,
                     int(curW / 2) - 34
                 ),
-                " < > to change queues. D for job details. L for job logs. Q to quit. "
+                " < > queues. D details. L logs. T terminate. Q quit. "
             )
         self.showJobs()
         self.__stdscr__.refresh()
@@ -329,6 +329,30 @@ class AWSBW():
         if prior_queue != self.__curJobQueue__:
             self.showJobs()
 
+    def displayList(self, L, win, Hoffset, Hmax, Woffset, Wmax):
+        L_i = 0
+        for line in L:
+            if Hmax <= (L_i + Hoffset):
+                break
+            line_chunks = [
+                line[i:i + int(Wmax)]
+                for i in range(
+                    0,
+                    len(line),
+                    Wmax
+                )
+            ]
+            for line_chunk in line_chunks:
+                if Hmax <= (L_i + Hoffset):
+                    break
+                win.addstr(
+                    L_i + Hoffset,
+                    Woffset,
+                    line_chunk.ljust(Wmax)
+                )
+                L_i += 1
+        win.refresh()
+
     def detail_panel(self):
         try:
             job = [j for j in self.__currentJobs__ if j['jobId'] == self.__curJobId__][0]
@@ -416,87 +440,67 @@ class AWSBW():
         else:
             cmd_start = 0
             commands = []
-        cmd_i = 0
-        for cmd in commands[cmd_start:]:
-            if cmd_i + 8 >= winH:
-                    break
-            cmd_chunks = [
-                cmd[i:i + int(winW - 2)]
-                for i in range(
-                    0,
-                    len(cmd),
-                    (winW - 2)
-                )
-            ]
-            for cmd_chunk in cmd_chunks:
-                if cmd_i + 8 >= winH:
-                    break
-                dp_win.addstr(
-                    cmd_i + 7,
-                    1,
-                    cmd_chunk.ljust(winW - 2)
-                )
-                cmd_i += 1
-
-        dp_win.refresh()
+        self.displayList(
+            commands[cmd_start:],
+            win=dp_win,
+            Hoffset=7,
+            Hmax=winH - 7,
+            Woffset=1,
+            Wmax=winW - 2
+        )
 
         # Log window loop!
         while True:
             c = self.__stdscr__.getch()
             if c == 27:
+                dp_win.clear()
                 dp.hide()
                 self.screenRefresh()
                 break
             elif c == curses.KEY_DOWN:
                 if cmd_start < len(commands):
                     cmd_start += 1
-                    cmd_i = 0
-                    for cmd in commands[cmd_start:]:
-                        if cmd_i + 8 >= winH:
-                                break
-                        cmd_chunks = [
-                            cmd[i:i + int(winW - 2)]
-                            for i in range(
-                                0,
-                                len(cmd),
-                                (winW - 2)
-                            )
-                        ]
-                        for cmd_chunk in cmd_chunks:
-                            if cmd_i + 8 >= winH:
-                                break
-                            dp_win.addstr(
-                                cmd_i + 7,
-                                1,
-                                cmd_chunk.ljust(winW - 2)
-                            )
-                            cmd_i += 1
-                    dp_win.refresh()
+                    self.displayList(
+                        commands[cmd_start:],
+                        win=dp_win,
+                        Hoffset=7,
+                        Hmax=winH - 7,
+                        Woffset=1,
+                        Wmax=winW - 2
+                    )
             elif c == curses.KEY_UP:
                 if cmd_start > 0:
                     cmd_start -= 1
-                    cmd_i = 0
-                    for cmd in commands[cmd_start:]:
-                        if cmd_i + 8 >= winH:
-                                break
-                        cmd_chunks = [
-                            cmd[i:i + int(winW - 2)]
-                            for i in range(
-                                0,
-                                len(cmd),
-                                (winW - 2)
-                            )
-                        ]
-                        for cmd_chunk in cmd_chunks:
-                            if cmd_i + 8 >= winH:
-                                break
-                            dp_win.addstr(
-                                cmd_i + 7,
-                                1,
-                                cmd_chunk.ljust(winW - 2)
-                            )
-                            cmd_i += 1
-                    dp_win.refresh()
+                    self.displayList(
+                        commands[cmd_start:],
+                        win=dp_win,
+                        Hoffset=7,
+                        Hmax=winH - 7,
+                        Woffset=1,
+                        Wmax=winW - 2
+                    )
+
+    def getLog(self, jobStreamName, startFromHead=False):
+        logs_client = boto3.client('logs')
+        try:
+            jobLog = logs_client.get_log_events(
+                logGroupName='/aws/batch/job',
+                logStreamName=jobStreamName,
+                startFromHead=startFromHead,
+            )
+            if startFromHead:
+                events = sorted(
+                    jobLog['events'],
+                    key=lambda e: e['timestamp']
+                )
+            else:
+                events = sorted(
+                    jobLog['events'],
+                    key=lambda e: -e['timestamp']
+                )
+        except:
+            events = []
+        return events
 
     def log_panel(self):
         try:
@@ -530,112 +534,112 @@ class AWSBW():
             ),
             winW - 2,
         )
+        lp_win.addnstr(
+            3,
+            1,
+            "Loading logs......".ljust(winW - 2),
+            winW - 2,
+        )
         lp_win.refresh()
-
-        logs_client = boto3.client('logs')
 
         jobDetails = self.jobDetails(job['jobId'])
         if jobDetails is None:
             return
 
-        # Get the log
         try:
             jobStreamName = jobDetails['container']['logStreamName']
-            jobLog = logs_client.get_log_events(
-                logGroupName='/aws/batch/job',
-                logStreamName=jobStreamName
-            )
-            events = sorted(
-                jobLog['events'],
-                key=lambda e: -e['timestamp']
-            )
         except:
-            events = []
+            return
 
+        # Get the log
+        startFromHead = True
+        events = self.getLog(jobStreamName, startFromHead)
         event_first = 0
-        e_i = 0
-        for e in events[event_first:]:
-            msg = e['message']
-            if e_i + 4 >= winH:
-                break
-            msg_chunks = [
-                msg[i:i + int(winW - 2)]
-                for i in range(
-                    0,
-                    len(msg),
-                    (winW - 2)
-                )
-            ]
-            for msg_chunk in msg_chunks:
-                if e_i + 4 >= winH:
-                    break
-                lp_win.addstr(
-                    e_i + 3,
-                    1,
-                    msg_chunk.ljust(winW - 2)
-                )
-                e_i += 1
-        lp_win.refresh()
+
+        self.displayList(
+            [
+                e['message'] for e
+                in events[event_first:]
+            ],
+            win=lp_win,
+            Hoffset=3,
+            Hmax=winH - 2,
+            Woffset=1,
+            Wmax=winW - 2,
+        )
 
         # Log window loop!
         while True:
             c = self.__stdscr__.getch()
-            if c == 27:
+            if c == 27:  # esc
+                lp_win.clear()
                 lp.hide()
                 self.screenRefresh()
                 break
+            elif c == 79 or c == 111:  # O or o
+                lp_win.addnstr(
+                    3,
+                    1,
+                    "Loading reversed logs ......".ljust(winW - 2),
+                    winW - 2,
+                )
+                lp_win.refresh()                
+                startFromHead = not startFromHead
+                events = self.getLog(jobStreamName, startFromHead)
+                event_first = 0
+                self.displayList(
+                    [
+                        e['message'] for e
+                        in events[event_first:]
+                    ],
+                    win=lp_win,
+                    Hoffset=3,
+                    Hmax=winH - 2,
+                    Woffset=1,
+                    Wmax=winW - 2,
+                )
+            elif c == curses.KEY_NPAGE or c == 32:  # or space
+                if (event_first + winH - 2) < len(events):
+                    event_first += (winH - 2)
+                    self.displayList(
+                        [
+                            e['message'] for e
+                            in events[event_first:]
+                        ],
+                        win=lp_win,
+                        Hoffset=3,
+                        Hmax=winH - 2,
+                        Woffset=1,
+                        Wmax=winW - 2,
+                    )
             elif c == curses.KEY_DOWN:
                 if event_first < len(events):
                     event_first += 1
-                    e_i = 0
-                    for e in events[event_first:]:
-                        msg = e['message']
-                        if e_i + 4 >= winH:
-                            break
-                        msg_chunks = [
-                            msg[i:i + int(winW - 2)]
-                            for i in range(
-                                0,
-                                len(msg),
-                                (winW - 2)
-                            )
-                        ]
-                        for msg_chunk in msg_chunks:
-                            if e_i + 4 >= winH:
-                                break
-                            lp_win.addstr(
-                                e_i + 3,
-                                1,
-                                msg_chunk.ljust(winW - 2)
-                            )
-                            e_i += 1
-                    lp_win.refresh()
+                    self.displayList(
+                        [
+                            e['message'] for e
+                            in events[event_first:]
+                        ],
+                        win=lp_win,
+                        Hoffset=3,
+                        Hmax=winH - 2,
+                        Woffset=1,
+                        Wmax=winW - 2,
+                    )
             elif c == curses.KEY_UP:
                 if event_first > 0:
                     event_first -= 1
-                    e_i = 0
-                    for e in events[event_first:]:
-                        msg = e['message']
-                        if e_i + 4 >= winH:
-                            break
-                        msg_chunks = [
-                            msg[i:i + int(winW - 2)]
-                            for i in range(
-                                0,
-                                len(msg),
-                                (winW - 2)
-                            )
-                        ]
-                        for msg_chunk in msg_chunks:
-                            if e_i + 4 >= winH:
-                                break
-                            lp_win.addstr(
-                                e_i + 3,
-                                1,
-                                msg_chunk.ljust(winW - 2)
-                            )
-                            e_i += 1
-                    lp_win.refresh()
+                    self.displayList(
+                        [
+                            e['message'] for e
+                            in events[event_first:]
+                        ],
+                        win=lp_win,
+                        Hoffset=3,
+                        Hmax=winH - 2,
+                        Woffset=1,
+                        Wmax=winW - 2,
+                    )
 
     def handleInput(self, c):
         if c == curses.KEY_UP or c == curses.KEY_DOWN:
