@@ -226,12 +226,13 @@ class AWSBW():
                 )
 
         # Clearing the right column
-        if winW > maxCols * col_width:
+        right_pad = winW - col_width * len(statuses[:maxCols]) -1
+        if right_pad > 0:
             for y in range(1, winH):
                 win.addnstr(
                     y,
-                    maxCols * col_width,
-                    " ".ljust(winW - 1 - maxCols * col_width),
+                    col_width * len(statuses[:maxCols]),
+                    "".ljust(right_pad),
                     winW
                 )
 
