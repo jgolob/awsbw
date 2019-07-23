@@ -226,7 +226,7 @@ class AWSBW():
                 )
 
         # Clearing the right column
-        right_pad = winW - col_width * len(statuses[:maxCols]) -1
+        right_pad = winW - col_width * len(statuses[:maxCols]) - 1
         if right_pad > 0:
             for y in range(1, winH):
                 win.addnstr(
