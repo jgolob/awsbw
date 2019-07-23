@@ -94,8 +94,6 @@ class AWSBW():
                 ),
                 " < > to change queues. D for job details. L for job logs. Q to quit. "
             )
-
-
         self.showJobs()
         self.__stdscr__.refresh()
 
@@ -233,6 +231,58 @@ class AWSBW():
             job_info = None
         return job_info
 
+    def terminateJob(self, jobId):
+        batch_client = boto3.client('batch')
+        batch_client.terminate_job(
+            jobId=jobId,
+            reason='Terminated by user'
+        )
+
+    def terminateJobDialog(self):
+        try:
+            job = [j for j in self.__currentJobs__ if j['jobId'] == self.__curJobId__][0]
+        except:
+            return
+        p = panel.new_panel(self.__stdscr__)
+        p.top()
+        p.show()
+        p_win = p.window()
+        p_win.clear()
+        p_win.border()
+        p_win.nodelay(False)
+        winH, winW = p_win.getmaxyx()
+        question_str = "To terminate job {} type Y".format(job['jobName'])
+        p_win.addnstr(
+            int(winH / 2) - 1,
+            max(
+                1,
+                int(winW / 2) - int(len(question_str) / 2),
+            ),
+            question_str,
+            winW - 2,
+        )
+        p_win.refresh()
+
+        c = p_win.getch()
+        if c == 121 or c == 89:
+            self.terminateJob(job['jobId'])
+            p_win.addnstr(
+                int(winH / 2) + 2,
+                max(
+                    1,
+                    int(winW / 2) - 5,
+                ),
+                "Terminated",
+                winW - 2,
+                curses.A_REVERSE
+            )
+            p_win.refresh()
+            time.sleep(1)
+
+        p_win.nodelay(True)
+        p.hide()
+        self.screenRefresh()
+
     def getJobs(self):
         self.__currentJobs__ = []
 
@@ -289,6 +339,7 @@ class AWSBW():
         dp.top()
         dp.show()
         dp_win = dp.window()
+        dp_win.clear()
         dp_win.border()
         dp_win.refresh()
         winH, winW = dp_win.getmaxyx()
@@ -394,7 +445,7 @@ class AWSBW():
             c = self.__stdscr__.getch()
             if c == 27:
                 dp.hide()
-                self.__stdscr__.border()
+                self.screenRefresh()
                 break
             elif c == curses.KEY_DOWN:
                 if cmd_start < len(commands):
@@ -461,8 +512,8 @@ class AWSBW():
             lp.hide()
             self.__stdscr__.border()
             return
-
-        lp_win.border()  
+        lp_win.clear()
+        lp_win.border()
         lp_win.addstr(
             winH - 1,
             int(winW / 2) - 3,
@@ -531,7 +582,7 @@ class AWSBW():
             c = self.__stdscr__.getch()
             if c == 27:
                 lp.hide()
-                self.__stdscr__.border()
+                self.screenRefresh()
                 break
             elif c == curses.KEY_DOWN:
                 if event_first < len(events):
@@ -602,6 +653,9 @@ class AWSBW():
 
         if c == 108 or c == 76:
             self.log_panel()
+
+        if c == 84 or c == 116:
+            self.terminateJobDialog()
 
     def actionLoop(self):
         while True:
