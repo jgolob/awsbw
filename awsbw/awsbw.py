@@ -20,20 +20,22 @@ class AWSBW():
             pass
         self.__stdscr__ = stdscr
         self.__stdscr__.nodelay(True)
-        (self.__termHeight__, self.__termWidth__) = stdscr.getmaxyx()
+        (curH, curW) = stdscr.getmaxyx()
         self.__stdscr__.clear()
-        self.__stdscr__.border()
+
         # add a window for the job listing
         self.__jobsWin__ = curses.newwin(
-            self.__termHeight__ - 2,
-            self.__termWidth__ - 2,
+            curH,
+            curW,
             1, 1
         )
+        self.__termHeight__ = None
+        self.__termWidth__ = None
 
         # Job stuff
         self.__jobStatuses__ = [
-            'RUNNABLE',
             'RUNNING',
+            'RUNNABLE',
             'SUCCEEDED',
             'FAILED',
             'STARTING',
@@ -57,45 +59,45 @@ class AWSBW():
                 curW - 2,
             )
             self.__stdscr__.border()
-        # Header: Use it to show the queues including which is current.
-        x = 1
-        for q in self.__jobQueues__:
-            if x + len(q) > curW:
-                break
-            if q == self.__curJobQueue__:
-                self.__stdscr__.addstr(
-                    0, x,
-                    q,
-                    curses.A_UNDERLINE
-                )
-                x += len(q) + 1
-            else:
-                self.__stdscr__.addstr(
-                    0, x,
-                    q,
-                )
-                x += len(q) + 1
+            # Header: Use it to show the queues including which is current.
+            x = 1
+            for q in self.__jobQueues__:
+                if x + len(q) > curW:
+                    break
+                if q == self.__curJobQueue__:
+                    self.__stdscr__.addstr(
+                        0, x,
+                        q,
+                        curses.A_UNDERLINE
+                    )
+                    x += len(q) + 1
+                else:
+                    self.__stdscr__.addstr(
+                        0, x,
+                        q,
+                    )
+                    x += len(q) + 1
 
-        if x + 20 < curW:
-            # If we have space, add the timestamp of the last check
-            self.__stdscr__.addstr(
-                0, curW - 20,
-                datetime.fromtimestamp(
-                    self.__lastJobCheck__).strftime('%Y-%m-%d %H:%M:%S')
-            )
+            if x + 20 < curW:
+                # If we have space, add the timestamp of the last check
+                self.__stdscr__.addstr(
+                    0, curW - 20,
+                    datetime.fromtimestamp(
+                        self.__lastJobCheck__).strftime('%Y-%m-%d %H:%M:%S')
+                )
 
-        # Footer
-        if curW > 71:
-            self.__stdscr__.addstr(
-                curH - 1,
-                max(
-                    1,
-                    int(curW / 2) - 34
-                ),
-                " < > queues. D details. L logs. T terminate. Q quit. "
-            )
+            # Footer
+            if curW > 71:
+                self.__stdscr__.addstr(
+                    curH - 1,
+                    max(
+                        1,
+                        int(curW / 2) - 34
+                    ),
+                    " < > queues. D details. L logs. T terminate. Q quit. "
+                )
+            self.__stdscr__.refresh()
         self.showJobs()
-        self.__stdscr__.refresh()
 
     def showJobs(self, moveKey=None):
         win = self.__jobsWin__
@@ -109,19 +111,22 @@ class AWSBW():
             if j['queue'] == self.__curJobQueue__ and j['createdAt'] >= cutoff_ts
         ]
 
+        if len(jobs) == 0:
+            return
+
         statuses = [s for s in self.__jobStatuses__ if s in {j['status'] for j in jobs}]
 
-        col_width = max(
+        col_width = max([
             max(len(s) + 1 for s in statuses),
-            max(len(j['jobName']) + 1 for j in jobs)
-        )
+            max(len(j['jobName']) + 1 for j in jobs),
+        ])
 
         (winH, winW) = win.getmaxyx()
 
         maxJobs = winH - 2
-        maxCols = int(winW / col_width)
+        maxCols = int((winW - 2) / col_width)
 
-        if self.__curJobId__ not in [j['jobId'] for j in jobs if j['status'] in statuses[0:int(maxCols)]]:
+        if self.__curJobId__ not in [j['jobId'] for j in jobs if j['status'] in statuses[0:maxCols]]:
             selected_status_i = 0
             selected_job_i = 0
         else:
@@ -163,12 +168,12 @@ class AWSBW():
         win.addnstr(
             0,
             0,
-            "".join([s.ljust(col_width) for s in statuses]).ljust(winW),
+            "".join([s.ljust(col_width) for s in statuses[:maxCols]]).ljust(winW),
             winW,
             curses.A_UNDERLINE
         )
         for status_i, status in enumerate(statuses):
-            if status_i > maxCols:
+            if status_i >= maxCols:
                 break
             status_jobs = [j for j in jobs if j['status'] == status]
             for job_i, job in enumerate(status_jobs):
@@ -176,32 +181,37 @@ class AWSBW():
                     break
                 if (job_i == selected_job_i) and (status_i == selected_status_i):
                     self.__curJobId__ = job['jobId']
-                    win.addstr(
+                    win.addnstr(
                         job_i + 1,
                         col_width * status_i,
                         job['jobName'].ljust(col_width),
+                        winW,
                         curses.A_REVERSE
                     )
                 else:
-                    win.addstr(
+                    win.addnstr(
                         job_i + 1,
                         col_width * status_i,
-                        job['jobName'].ljust(col_width)
+                        job['jobName'].ljust(col_width),
+                        winW
                     )
-            # Clearing out the screen
+            # Clearing out the remainder of the column
             for y in range(job_i + 2, winH):
-                win.addstr(
+                win.addnstr(
                     y,
                     col_width * status_i,
-                    "".ljust(col_width)
+                    "".ljust(col_width),
+                    winW
                 )
+
         # Clearing the right column
-        if winW > len(statuses) * col_width:
+        if winW > maxCols * col_width:
             for y in range(1, winH):
-                win.addstr(
+                win.addnstr(
                     y,
-                    len(statuses) * col_width,
-                    " ".ljust(winW - 1 - len(statuses) * col_width)
+                    maxCols * col_width,
+                    " ".ljust(winW - 1 - maxCols * col_width),
+                    winW
                 )
 
         win.refresh()
@@ -583,7 +593,7 @@ class AWSBW():
                     "Loading reversed logs ......".ljust(winW - 2),
                     winW - 2,
                 )
-                lp_win.refresh()                
+                lp_win.refresh()
                 startFromHead = not startFromHead
                 events = self.getLog(jobStreamName, startFromHead)
                 event_first = 0
