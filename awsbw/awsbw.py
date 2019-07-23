@@ -25,8 +25,8 @@ class AWSBW():
 
         # add a window for the job listing
         self.__jobsWin__ = curses.newwin(
-            curH,
-            curW,
+            curH - 2,
+            curW - 2,
             1, 1
         )
         self.__termHeight__ = None
@@ -48,7 +48,7 @@ class AWSBW():
         # Now display!
         self.screenRefresh()
 
-    def screenRefresh(self):
+    def screenRefresh(self, forceRedraw=False):
         (curH, curW) = self.__stdscr__.getmaxyx()
         if self.__termHeight__ != curH or self.__termWidth__ != curW:
             curses.resizeterm(curH, curW)
@@ -59,45 +59,51 @@ class AWSBW():
                 curW - 2,
             )
             self.__stdscr__.border()
-            # Header: Use it to show the queues including which is current.
-            x = 1
-            for q in self.__jobQueues__:
-                if x + len(q) > curW:
-                    break
-                if q == self.__curJobQueue__:
-                    self.__stdscr__.addstr(
-                        0, x,
-                        q,
-                        curses.A_UNDERLINE
-                    )
-                    x += len(q) + 1
-                else:
-                    self.__stdscr__.addstr(
-                        0, x,
-                        q,
-                    )
-                    x += len(q) + 1
-
-            if x + 20 < curW:
-                # If we have space, add the timestamp of the last check
-                self.__stdscr__.addstr(
-                    0, curW - 20,
-                    datetime.fromtimestamp(
-                        self.__lastJobCheck__).strftime('%Y-%m-%d %H:%M:%S')
-                )
-
-            # Footer
-            if curW > 71:
-                self.__stdscr__.addstr(
-                    curH - 1,
-                    max(
-                        1,
-                        int(curW / 2) - 34
-                    ),
-                    " < > queues. D details. L logs. T terminate. Q quit. "
-                )
             self.__stdscr__.refresh()
-        self.showJobs()
+            self.showJobs()
+        elif forceRedraw:
+            self.__stdscr__.border()
+            self.__stdscr__.refresh()
+            self.showJobs()
+
+        # Header: Use it to show the queues including which is current.
+        x = 1
+        for q in self.__jobQueues__:
+            if x + len(q) > curW:
+                break
+            if q == self.__curJobQueue__:
+                self.__stdscr__.addstr(
+                    0, x,
+                    q,
+                    curses.A_UNDERLINE
+                )
+                x += len(q) + 1
+            else:
+                self.__stdscr__.addstr(
+                    0, x,
+                    q,
+                )
+                x += len(q) + 1
+
+        if x + 20 < curW:
+            # If we have space, add the timestamp of the last check
+            self.__stdscr__.addstr(
+                0, curW - 20,
+                datetime.fromtimestamp(
+                    self.__lastJobCheck__).strftime('%Y-%m-%d %H:%M:%S')
+            )
+
+        # Footer
+        if curW > 71:
+            self.__stdscr__.addstr(
+                curH - 1,
+                max(
+                    1,
+                    int(curW / 2) - 34
+                ),
+                " < > queues. D details. L logs. T terminate. Q quit. "
+            )
+        self.__stdscr__.refresh()
 
     def showJobs(self, moveKey=None):
         win = self.__jobsWin__
@@ -111,7 +117,15 @@ class AWSBW():
             if j['queue'] == self.__curJobQueue__ and j['createdAt'] >= cutoff_ts
         ]
 
+        (winH, winW) = win.getmaxyx()
+
         if len(jobs) == 0:
+            win.addnstr(
+                1,
+                0,
+                "No Jobs",
+                winW
+            )
             return
 
         statuses = [s for s in self.__jobStatuses__ if s in {j['status'] for j in jobs}]
@@ -120,8 +134,6 @@ class AWSBW():
             max(len(s) + 1 for s in statuses),
             max(len(j['jobName']) + 1 for j in jobs),
         ])
-
-        (winH, winW) = win.getmaxyx()
 
         maxJobs = winH - 2
         maxCols = int((winW - 2) / col_width)
@@ -152,18 +164,27 @@ class AWSBW():
                 selected_job_i = min([
                     selected_job_i + 1,
                     maxJobs,
-                    len([j for j in jobs if j['status'] == statuses[selected_status_i]])
+                    len([j for j in jobs if j['status'] == statuses[selected_status_i]]) - 1
                 ])
             elif moveKey == curses.KEY_RIGHT:
                 selected_status_i = min(
-                    len(statuses),
+                    len(statuses) - 1,
+                    maxCols,
                     selected_status_i + 1
                 )
+                selected_job_i = min([
+                    selected_job_i,
+                    len([j for j in jobs if j['status'] == statuses[selected_status_i]]) - 1
+                ])
             elif moveKey == curses.KEY_LEFT:
                 selected_status_i = max(
                     0,
                     selected_status_i - 1
                 )
+                selected_job_i = min([
+                    selected_job_i,
+                    len([j for j in jobs if j['status'] == statuses[selected_status_i]]) - 1
+                ])
 
         win.addnstr(
             0,
@@ -291,7 +312,7 @@ class AWSBW():
 
         p_win.nodelay(True)
         p.hide()
-        self.screenRefresh()
+        self.screenRefresh(forceRedraw=True)
 
     def getJobs(self):
         self.__currentJobs__ = []
@@ -315,6 +336,7 @@ class AWSBW():
     def refreshJobs(self, MIN_DELAY=30):
         if time.time() - self.__lastJobCheck__ >= MIN_DELAY:
             self.getJobs()
+            self.showJobs()
             return True
         else:
             return False
@@ -459,13 +481,13 @@ class AWSBW():
             Wmax=winW - 2
         )
 
-        # Log window loop!
+        # Detail window loop!
         while True:
             c = self.__stdscr__.getch()
             if c == 27:
                 dp_win.clear()
                 dp.hide()
-                self.screenRefresh()
+                self.screenRefresh(forceRedraw=True)
                 break
             elif c == curses.KEY_DOWN:
                 if cmd_start < len(commands):
@@ -584,7 +606,7 @@ class AWSBW():
             if c == 27:  # esc
                 lp_win.clear()
                 lp.hide()
-                self.screenRefresh()
+                self.screenRefresh(forceRedraw=True)
                 break
             elif c == 79 or c == 111:  # O or o
                 lp_win.addnstr(
@@ -673,14 +695,10 @@ class AWSBW():
 
     def actionLoop(self):
         while True:
-
             c = self.__stdscr__.getch()
-
             if c == 113 or c == 81:
                 break
-
             self.handleInput(c)
-
             self.refreshJobs()
             self.screenRefresh()
 
