@@ -447,7 +447,7 @@ class AWSBW():
                 3,
                 1,
                 "Job Description: {}".format(
-                    jobDetails['jobDefinition'].split('/')[-1]
+                    jobDetails.get('jobDefinition', "").split('/')[-1]
                 ),
                 winW - 2
             )
@@ -455,7 +455,7 @@ class AWSBW():
                 4,
                 1,
                 "Image: {}".format(
-                    jobDetails['container']['image'],
+                    jobDetails.get('container', {}).get('image', "None"),
                 ),
                 winW - 2
             )
@@ -463,13 +463,13 @@ class AWSBW():
                 5,
                 1,
                 "\tvcpu: {}\t\tmem: {:,} MB.".format(
-                    jobDetails['container'].get('vcpus'),
-                    jobDetails['container'].get('memory')
+                    jobDetails.get('container', {}).get('vcpus'),
+                    jobDetails.get('container', {}).get('memory')
                 ),
                 winW - 2
             )
             cmd_start = 0
-            commands = jobDetails['container']['command']
+            commands = jobDetails.get('container', {}).get('command', [])
         else:
             cmd_start = 0
             commands = []
