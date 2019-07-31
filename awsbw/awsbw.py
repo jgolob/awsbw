@@ -10,9 +10,16 @@ from datetime import datetime
 
 
 class AWSBW():
-    def __init__(self, stdscr, jobQueues):
+    def __init__(
+            self,
+            stdscr,
+            jobQueues,
+            max_age_days=7):
         self.__currentJobs__ = []
-        self.__max_age_days__ = 7
+        try:
+            self.__max_age_days__ = int(max_age_days)
+        except:
+            self.__max_age_days__ = 7
         # screen stuff
         try:
             curses.curs_set(0)
@@ -708,20 +715,53 @@ def start(stdscr, args):
     awsbw = AWSBW(
         stdscr,
         args.queue,
+        args.max_age_days
     )
     awsbw.actionLoop()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AWS Batch Watcher")
+    parser = argparse.ArgumentParser(
+        description="""AWS Batch Watcher
+        A small utility for viewing jobs on AWS batch\n
+        Please either list the available queues or provide queue(s) you wish to watch
+        """
+    )
+
     parser.add_argument(
         '-Q', '--queue',
-        required=True,
         help='AWS batch queue(s) to monitor',
         nargs='+'
     )
+    parser.add_argument(
+        '-L', '--list-queues',
+        action='store_true',
+        help="List available batch queues and exit"
+    )
+    parser.add_argument(
+        '-D', '--max-age-days',
+        default='7',
+        help="Maximum job age (in days) to show. Integer only."
+    )
     args = parser.parse_args()
-    wrapper(start, args)
+    if args.list_queues:
+        print("Available batch queues:")
+        try:
+            batch_client = boto3.client('batch')
+            queues = [
+                q['jobQueueName'] for q in
+                batch_client.describe_job_queues().get('jobQueues', [])
+            ]
+            for q in queues:
+                print("\t{}".format(q))
+        except Exception as e:
+            print("Error loading queues from batch: {}".format(e))
+        sys.exit(0)
+    elif args.queue is not None:
+        wrapper(start, args)
+    else:
+        parser.print_help()
+
 
 if __name__ == '__main__':
     main()
