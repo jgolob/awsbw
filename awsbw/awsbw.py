@@ -14,12 +14,14 @@ class AWSBW():
             self,
             stdscr,
             jobQueues,
-            max_age_days=7):
+            max_age_days=7,
+            aws_profile='default'):
         self.__currentJobs__ = []
         try:
             self.__max_age_days__ = int(max_age_days)
         except:
             self.__max_age_days__ = 7
+        self.__aws_profile__ = aws_profile
         # screen stuff
         try:
             curses.curs_set(0)
@@ -246,7 +248,8 @@ class AWSBW():
         win.refresh()
 
     def queueJobs(self, queue, status='RUNNING'):
-        batch_client = boto3.client('batch')
+        session = boto3.session.Session(profile_name=self.__aws_profile__)
+        batch_client = session.client('batch')
         jobs_running = batch_client.list_jobs(
             jobQueue=queue,
             jobStatus=status,
@@ -259,7 +262,8 @@ class AWSBW():
             return []
 
     def jobDetails(self, jobId):
-        batch_client = boto3.client('batch')
+        session = boto3.session.Session(profile_name=self.__aws_profile__)
+        batch_client = session.client('batch')
         try:
             job_info = batch_client.describe_jobs(
                 jobs=[
@@ -521,7 +525,8 @@ class AWSBW():
                     )
 
     def getLog(self, jobStreamName, startFromHead=False):
-        logs_client = boto3.client('logs')
+        session = boto3.session.Session(profile_name=self.__aws_profile__)
+        logs_client = session.client('logs')
         try:
             jobLog = logs_client.get_log_events(
                 logGroupName='/aws/batch/job',
@@ -715,7 +720,8 @@ def start(stdscr, args):
     awsbw = AWSBW(
         stdscr,
         args.queue,
-        args.max_age_days
+        args.max_age_days,
+        args.profile,
     )
     awsbw.actionLoop()
 
@@ -727,11 +733,15 @@ def main():
         Please either list the available queues or provide queue(s) you wish to watch
         """
     )
-
     parser.add_argument(
         '-Q', '--queue',
         help='AWS batch queue(s) to monitor',
         nargs='+'
+    )
+    parser.add_argument(
+        '-P', '--profile',
+        help='AWS profile to use. (Default is default)',
+        default='default'
     )
     parser.add_argument(
         '-L', '--list-queues',
@@ -744,10 +754,23 @@ def main():
         help="Maximum job age (in days) to show. Integer only."
     )
     args = parser.parse_args()
+    # Verify the profile exists
+
+    if not args.profile in boto3.session.Session().available_profiles:
+        print("AWS profile {} does not exist.".format(
+            args.profile)
+        )
+        print("Available profiles: {}".format(
+            ", ".join(boto3.session.Session().available_profiles)
+        ))
+        print("Exiting.")
+        sys.exit(1)
+
     if args.list_queues:
         print("Available batch queues:")
         try:
-            batch_client = boto3.client('batch')
+            session = boto3.session.Session(profile_name=args.profile)
+            batch_client = session.client('batch')
             queues = [
                 q['jobQueueName'] for q in
                 batch_client.describe_job_queues().get('jobQueues', [])
