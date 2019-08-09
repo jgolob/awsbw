@@ -252,17 +252,26 @@ class AWSBW():
     def queueJobs(self, queue, status='RUNNING'):
         session = boto3.session.Session(profile_name=self.__aws_profile__)
         batch_client = session.client('batch')
-        jobs_running = batch_client.list_jobs(
+
+        jobs_QS = batch_client.list_jobs(
             jobQueue=queue,
             jobStatus=status,
         )
-        jobs_running['jobSummaryList'].sort(key=lambda v: -v['createdAt'])
-        try:
-            for j in jobs_running['jobSummaryList']:
-                j.update({'queue': queue})
-            return jobs_running['jobSummaryList']
-        except:
-            return []
+        JSL = jobs_QS.get('jobSummaryList', [])
+        nextToken = jobs_QS.get('nextToken', None)
+        while nextToken is not None:
+            jobs_QS = batch_client.list_jobs(
+                jobQueue=queue,
+                jobStatus=status,
+                nextToken=nextToken,
+            )
+            JSL += jobs_QS.get('jobSummaryList', [])
+            nextToken = jobs_QS.get('nextToken', None)
+
+        JSL.sort(key=lambda v: -v['createdAt'])
+        for j in JSL:
+            j.update({'queue': queue})
+        return JSL
 
     def jobDetails(self, jobId):
         session = boto3.session.Session(profile_name=self.__aws_profile__)
