@@ -7,6 +7,8 @@ import sys
 import argparse
 import time
 from datetime import datetime
+from multiprocessing import Process, Manager
+from collections import Counter
 
 
 class AWSBW():
@@ -15,12 +17,17 @@ class AWSBW():
             stdscr,
             jobQueues,
             max_age_days=7,
-            aws_profile='default'):
+            aws_profile='default',
+            job_polling_sec=60):
         self.__currentJobs__ = []
         try:
             self.__max_age_days__ = int(max_age_days)
         except:
             self.__max_age_days__ = 7
+        try:
+            self.__job_polling_sec__ = int(job_polling_sec)
+        except:
+            self.__job_polling_sec__ = 30
         self.__aws_profile__ = aws_profile
         # screen stuff
         try:
@@ -52,8 +59,7 @@ class AWSBW():
         self.__jobQueues__ = jobQueues
         self.__curJobQueue__ = jobQueues[0]
         self.__curJobId__ = None
-        self.getJobs()
-
+        self.__lastJobCheck__ = None
         # Now display!
         self.screenRefresh()
 
@@ -94,7 +100,7 @@ class AWSBW():
                 )
                 x += len(q) + 1
 
-        if x + 20 < curW:
+        if x + 20 < curW and self.__lastJobCheck__ is not None:
             # If we have space, add the timestamp of the last check
             self.__stdscr__.addstr(
                 0, curW - 20,
@@ -129,15 +135,26 @@ class AWSBW():
         (winH, winW) = win.getmaxyx()
 
         if len(jobs) == 0:
-            win.erase()
-            win.addnstr(
-                1,
-                0,
-                "No Jobs",
-                winW
-            )
-            win.refresh()
-            return
+            if self.__lastJobCheck__ is None:
+                win.erase()
+                win.addnstr(
+                    1,
+                    0,
+                    "Loading Jobs...",
+                    winW
+                )
+                win.refresh()
+                return
+            else:
+                win.erase()
+                win.addnstr(
+                    1,
+                    0,
+                    "No Jobs",
+                    winW
+                )
+                win.refresh()
+                return
 
         statuses = [s for s in self.__jobStatuses__ if s in {j['status'] for j in jobs}]
 
@@ -338,28 +355,12 @@ class AWSBW():
         p.hide()
         self.screenRefresh(forceRedraw=True)
 
-    def getJobs(self):
-        self.__currentJobs__ = []
-
-        for queue in self.__jobQueues__:
-            queue_jobs = []
-            for status in self.__jobStatuses__:
-                queue_jobs += self.queueJobs(
-                    queue,
-                    status=status
-                )
-            for j in queue_jobs:
-                j['queue'] = queue
-            self.__currentJobs__ += sorted(
-                queue_jobs,
-                key=lambda j: -j['createdAt']
-            )
-
-        self.__lastJobCheck__ = time.time()
-
-    def refreshJobs(self, MIN_DELAY=30):
-        if time.time() - self.__lastJobCheck__ >= MIN_DELAY:
-            self.getJobs()
+    def refreshJobs(self, update_secs=10):
+        if (self.__lastJobCheck__ is not None) and (time.time() - self.__lastJobCheck__ <= update_secs):
+            return False
+        elif {j['jobId'] for j in self.__currentJobs__} != {j['jobId'] for j in self.__jobList__}:
+            self.__currentJobs__ = [j for j in self.__jobList__]
+            self.__lastJobCheck__ = self.__jobProcessStatus__.get('last_check')
             self.showJobs()
             return True
         else:
@@ -700,6 +701,25 @@ class AWSBW():
                         Wmax=winW - 2,
                     )
 
+    def updateJobsLoop(self):
+        last_check = None
+        while True:
+            if (last_check is None) or (time.time() - last_check >= self.__job_polling_sec__):
+                updatedJobs = []
+                for queue in self.__jobQueues__:
+                    queue_jobs = []
+                    for status in self.__jobStatuses__:
+                        queue_jobs += self.queueJobs(queue, status)
+                    updatedJobs += sorted(queue_jobs, key=lambda j: -j['createdAt'])
+                # All done updating all queues
+                # Clear out the existing jobs
+                del self.__jobList__[:]
+                # Put in our updated job list
+                self.__jobList__.extend(updatedJobs)
+                # Update our time
+                last_check = time.time()
+                self.__jobProcessStatus__['last_check'] = last_check
+
     def handleInput(self, c):
         if c == curses.KEY_UP or c == curses.KEY_DOWN:
             self.showJobs(c)
@@ -721,13 +741,26 @@ class AWSBW():
             self.terminateJobDialog()
 
     def actionLoop(self):
-        while True:
-            c = self.__stdscr__.getch()
-            if c == 113 or c == 81:
-                break
-            self.handleInput(c)
-            self.refreshJobs()
-            self.screenRefresh()
+        # Start job update thread
+
+        with Manager() as self.__jobManager__:
+            self.__jobList__ = self.__jobManager__.list()
+            self.__jobProcessStatus__ = self.__jobManager__.dict()
+            self.__jobProcessStatus__['last_check'] = None
+            self.__jobProcess__ = Process(
+                target=self.updateJobsLoop,
+            )
+            self.__jobProcess__.start()
+            while True:
+                c = self.__stdscr__.getch()
+                if c == 113 or c == 81:
+                    break
+                self.handleInput(c)
+                self.refreshJobs()
+                self.screenRefresh()
+                if not self.__jobProcess__.is_alive():
+                    raise Exception("Job Thread Died")
+            self.__jobProcess__.terminate()
 
 
 def start(stdscr, args):
@@ -736,7 +769,9 @@ def start(stdscr, args):
         args.queue,
         args.max_age_days,
         args.profile,
+        args.job_polling_sec
     )
+    # UI action loop
     awsbw.actionLoop()
 
 
@@ -765,7 +800,14 @@ def main():
     parser.add_argument(
         '-D', '--max-age-days',
         default='7',
+        type=int,
         help="Maximum job age (in days) to show. Integer only."
+    )
+    parser.add_argument(
+        '-C', '--job-polling-sec',
+        type=int,
+        default='60',
+        help="Seconds between polling for jobs (default 60 sec). Int only"
     )
     args = parser.parse_args()
     # Verify the profile exists
