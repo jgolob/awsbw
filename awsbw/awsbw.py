@@ -355,8 +355,8 @@ class AWSBW():
         p.hide()
         self.screenRefresh(forceRedraw=True)
 
-    def refreshJobs(self, update_secs=10):
-        if (self.__lastJobCheck__ is not None) and (time.time() - self.__lastJobCheck__ <= update_secs):
+    def refreshJobs(self):
+        if (self.__lastJobCheck__ is not None) and (time.time() - self.__lastJobCheck__ <= self.__job_polling_sec__):
             return False
         elif {j['jobId'] for j in self.__currentJobs__} != {j['jobId'] for j in self.__jobList__}:
             self.__currentJobs__ = [j for j in self.__jobList__]
