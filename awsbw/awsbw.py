@@ -129,12 +129,14 @@ class AWSBW():
         (winH, winW) = win.getmaxyx()
 
         if len(jobs) == 0:
+            win.erase()
             win.addnstr(
                 1,
                 0,
                 "No Jobs",
                 winW
             )
+            win.refresh()
             return
 
         statuses = [s for s in self.__jobStatuses__ if s in {j['status'] for j in jobs}]
@@ -254,6 +256,7 @@ class AWSBW():
             jobQueue=queue,
             jobStatus=status,
         )
+        jobs_running['jobSummaryList'].sort(key=lambda v: -v['createdAt'])
         try:
             for j in jobs_running['jobSummaryList']:
                 j.update({'queue': queue})
@@ -425,10 +428,12 @@ class AWSBW():
         dp_win.addnstr(
             1,
             1,
-            "{} (id: {}) on {}".format(
+            "{} (id: {}) on {}. {}: {}".format(
                 job['jobName'],
                 job['jobId'],
-                job['queue']
+                job['queue'],
+                job.get('status', ""),
+                job.get('statusReason', "")
             ),
             winW - 2,
         )
@@ -756,7 +761,7 @@ def main():
     args = parser.parse_args()
     # Verify the profile exists
 
-    if not args.profile in boto3.session.Session().available_profiles:
+    if args.profile not in boto3.session.Session().available_profiles:
         print("AWS profile {} does not exist.".format(
             args.profile)
         )
