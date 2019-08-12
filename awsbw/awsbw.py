@@ -360,7 +360,8 @@ class AWSBW():
             return False
         elif {j['jobId'] for j in self.__currentJobs__} != {j['jobId'] for j in self.__jobList__}:
             self.__currentJobs__ = [j for j in self.__jobList__]
-            self.__lastJobCheck__ = self.__jobProcessStatus__.get('last_check')
+            if len(self.__jobList__) != 0:
+                self.__lastJobCheck__ = self.__jobProcessStatus__.get('last_check')
             self.showJobs()
             return True
         else:
@@ -722,7 +723,7 @@ class AWSBW():
                 # Sleep the thread until the next check is due
                 sleep_time = self.__job_polling_sec__ - (time.time() - last_check)
                 if sleep_time > 0:
-                    time.sleep(sleep_time)
+                    time.sleep(sleep_time-1)
 
     def handleInput(self, c):
         if c == curses.KEY_UP or c == curses.KEY_DOWN:
