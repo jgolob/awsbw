@@ -705,6 +705,9 @@ class AWSBW():
         last_check = None
         while True:
             if (last_check is None) or (time.time() - last_check >= self.__job_polling_sec__):
+                # Update our time
+                last_check = time.time()
+                self.__jobProcessStatus__['last_check'] = last_check
                 updatedJobs = []
                 for queue in self.__jobQueues__:
                     queue_jobs = []
@@ -716,9 +719,10 @@ class AWSBW():
                 del self.__jobList__[:]
                 # Put in our updated job list
                 self.__jobList__.extend(updatedJobs)
-                # Update our time
-                last_check = time.time()
-                self.__jobProcessStatus__['last_check'] = last_check
+                # Sleep the thread until the next check is due
+                sleep_time = self.__job_polling_sec__ - (time.time() - last_check)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
     def handleInput(self, c):
         if c == curses.KEY_UP or c == curses.KEY_DOWN:

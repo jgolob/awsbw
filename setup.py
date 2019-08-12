@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='awsbw',
-    version='0.1.0',
+    version='0.1.1',
     description="""A small CLI utility to view jobs in an AWS batch queue
       """,
     url='https://github.com/jgolob/awsbw',
