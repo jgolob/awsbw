@@ -760,7 +760,10 @@ class AWSBW():
                 c = self.__stdscr__.getch()
                 if c == 113 or c == 81:
                     break
-                self.handleInput(c)
+                elif c != -1:
+                    self.handleInput(c)
+                else:
+                    time.sleep(0.1)
                 self.refreshJobs()
                 self.screenRefresh()
                 if not self.__jobProcess__.is_alive():
